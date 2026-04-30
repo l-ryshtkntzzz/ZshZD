@@ -582,6 +582,81 @@ CREATE TRIGGER on_task_acceptance_create_todo
   EXECUTE FUNCTION create_todo_on_task_acceptance();
 
 -- ============================================================================
+-- 7B. TRIGGER FOR PROPOSAL ACCEPTANCE - Create todo with negotiated terms
+-- ============================================================================
+-- CRITICAL: When a proposal is accepted, the todo must be created with
+-- the NEGOTIATED TERMS (price, timeline, notes) from the proposal,
+-- NOT the original task details.
+
+CREATE OR REPLACE FUNCTION create_todo_on_proposal_acceptance()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Create a todo list entry when proposal is accepted (status changes from anything to 'accepted')
+  IF NEW.status = 'accepted' AND (OLD.status IS NULL OR OLD.status != 'accepted') THEN
+    INSERT INTO public.todo_list (
+      task_id,
+      provider_id,
+      title,
+      description,
+      priority,
+      due_date,
+      details,
+      status
+    )
+    SELECT
+      t.id,
+      NEW.provider_id,
+      t.title,
+      t.description,
+      t.priority,
+      t.due_date,
+      jsonb_build_object(
+        'category', t.category,
+        'estimated_time', t.estimated_time,
+        'payment_terms', t.payment_terms,
+        'budget_original', t.budget,           -- Original task budget (for reference)
+        'budget', NEW.quoted_price,             -- AGREED PRICE from proposal ✅
+        'timeline', NEW.proposed_timeline,      -- AGREED TIMELINE from proposal ✅
+        'negotiation_notes', NEW.proposal_notes  -- AGREED NOTES from proposal ✅
+      ),
+      'pending'::character varying
+    FROM tasks t
+    WHERE t.id = NEW.task_id
+    ON CONFLICT (task_id, provider_id) DO UPDATE SET
+      details = jsonb_build_object(
+        'category', (SELECT category FROM tasks WHERE id = NEW.task_id),
+        'estimated_time', (SELECT estimated_time FROM tasks WHERE id = NEW.task_id),
+        'payment_terms', (SELECT payment_terms FROM tasks WHERE id = NEW.task_id),
+        'budget_original', (SELECT budget FROM tasks WHERE id = NEW.task_id),
+        'budget', NEW.quoted_price,
+        'timeline', NEW.proposed_timeline,
+        'negotiation_notes', NEW.proposal_notes
+      ),
+      updated_at = now();
+
+    -- Notify provider that proposal was accepted
+    INSERT INTO public.notifications (user_id, task_id, type, message)
+    SELECT
+      up.user_id,
+      NEW.task_id,
+      'proposal_accepted'::character varying,
+      'Your proposal has been accepted! Check your todo list for the agreed terms.'
+    FROM user_profiles up
+    WHERE up.id = NEW.provider_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger for proposal acceptance -> todo creation
+DROP TRIGGER IF EXISTS on_proposal_acceptance_create_todo ON public.task_proposals;
+CREATE TRIGGER on_proposal_acceptance_create_todo
+  AFTER UPDATE ON public.task_proposals
+  FOR EACH ROW
+  EXECUTE FUNCTION create_todo_on_proposal_acceptance();
+
+-- ============================================================================
 -- 8. HELPER FUNCTIONS FOR FRONTEND INTEGRATION
 -- ============================================================================
 

@@ -264,42 +264,80 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
         throw new Error("Provider ID is missing. Cannot create task.");
       }
 
-      // Create todo with agreed terms
-      // CRITICAL: provider_id MUST be from user_profiles.id, NOT auth.users.id
-      const { data: todoData, error: todoError } = await supabase
+      // Check if a todo already exists for this task to prevent duplicates
+      // (could exist from old task_responses flow)
+      const { data: existingTodos } = await supabase
         .from("todo_list")
-        .insert([
-          {
-            task_id: taskId,
-            provider_id: providerId, // This MUST be user_profiles.id
-            status: "pending",
-            title: task.title,
-            description: task.description,
-            priority: task.priority || "medium",
-            due_date: task.due_date,
-            estimated_hours: task.estimated_time
-              ? parseInt(task.estimated_time)
-              : null,
+        .select("id")
+        .eq("task_id", taskId)
+        .eq("provider_id", providerId);
+
+      let todoData;
+      let todoError;
+
+      if (existingTodos && existingTodos.length > 0) {
+        // Update existing todo with negotiated terms
+        const { data: updatedTodo, error: updateError } = await supabase
+          .from("todo_list")
+          .update({
             details: {
               category: task.category,
               estimated_time: task.estimated_time,
               payment_terms: task.payment_terms,
-              budget: keyTerms.price,
-              timeline: keyTerms.timeline,
-              negotiation_notes: keyTerms.notes,
+              budget_original: task.budget,        // Original task budget (for reference)
+              budget: keyTerms.price,              // AGREED PRICE ✅
+              timeline: keyTerms.timeline,         // AGREED TIMELINE ✅
+              negotiation_notes: keyTerms.notes,   // AGREED NOTES ✅
             },
-            attachments: attachments.length > 0 ? attachments.map((a) => ({
-              id: a.attachmentId,
-              name: a.originalName,
-              size: a.fileSize,
-            })) : null,
-          },
-        ])
-        .select("id")
-        .single();
+          })
+          .eq("id", existingTodos[0].id)
+          .select("id")
+          .single();
+
+        todoData = updatedTodo;
+        todoError = updateError;
+      } else {
+        // Create new todo with agreed terms
+        // CRITICAL: provider_id MUST be from user_profiles.id, NOT auth.users.id
+        const { data: newTodo, error: createError } = await supabase
+          .from("todo_list")
+          .insert([
+            {
+              task_id: taskId,
+              provider_id: providerId, // This MUST be user_profiles.id
+              status: "pending",
+              title: task.title,
+              description: task.description,
+              priority: task.priority || "medium",
+              due_date: task.due_date,
+              estimated_hours: task.estimated_time
+                ? parseInt(task.estimated_time)
+                : null,
+              details: {
+                category: task.category,
+                estimated_time: task.estimated_time,
+                payment_terms: task.payment_terms,
+                budget_original: task.budget,        // Original task budget (for reference)
+                budget: keyTerms.price,              // AGREED PRICE ✅
+                timeline: keyTerms.timeline,         // AGREED TIMELINE ✅
+                negotiation_notes: keyTerms.notes,   // AGREED NOTES ✅
+              },
+              attachments: attachments.length > 0 ? attachments.map((a) => ({
+                id: a.attachmentId,
+                name: a.originalName,
+                size: a.fileSize,
+              })) : null,
+            },
+          ])
+          .select("id")
+          .single();
+
+        todoData = newTodo;
+        todoError = createError;
+      }
 
       if (todoError) throw todoError;
-      if (!todoData) throw new Error("Failed to create todo");
+      if (!todoData) throw new Error("Failed to create or update todo");
 
       toast({
         title: "Negotiation Finalized",
