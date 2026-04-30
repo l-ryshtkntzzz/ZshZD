@@ -30,6 +30,9 @@ interface KeyTerms {
   price?: number;
   timeline?: string;
   notes?: string;
+  category?: string;
+  estimatedTime?: string;
+  paymentTerms?: string;
   [key: string]: string | number | undefined;
 }
 
@@ -67,11 +70,17 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
     price: initialProposal.quoted_price || undefined,
     timeline: initialProposal.proposed_timeline || undefined,
     notes: initialProposal.proposal_notes || undefined,
+    category: initialProposal.proposed_category || task.category || undefined,
+    estimatedTime: initialProposal.proposed_estimated_time || task.estimated_time || undefined,
+    paymentTerms: initialProposal.proposed_payment_terms || task.payment_terms || undefined,
   });
   const [editingTerms, setEditingTerms] = useState<KeyTerms>({
     price: initialProposal.quoted_price || undefined,
     timeline: initialProposal.proposed_timeline || undefined,
     notes: initialProposal.proposal_notes || undefined,
+    category: initialProposal.proposed_category || task.category || undefined,
+    estimatedTime: initialProposal.proposed_estimated_time || task.estimated_time || undefined,
+    paymentTerms: initialProposal.proposed_payment_terms || task.payment_terms || undefined,
   });
   const [showFinalizationDialog, setShowFinalizationDialog] = useState(false);
   const [isFinalizingTodo, setIsFinalizingTodo] = useState(false);
@@ -240,7 +249,7 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
         throw new Error("User profile not found. Please refresh and try again.");
       }
 
-      // Update proposal status to accepted
+      // Update proposal status to accepted with ALL negotiated terms
       const { error: proposalError } = await supabase
         .from("task_proposals")
         .update({
@@ -248,6 +257,9 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
           quoted_price: keyTerms.price,
           proposed_timeline: keyTerms.timeline,
           proposal_notes: keyTerms.notes,
+          proposed_category: keyTerms.category,
+          proposed_estimated_time: keyTerms.estimatedTime,
+          proposed_payment_terms: keyTerms.paymentTerms,
         })
         .eq("id", proposalId);
 
@@ -276,18 +288,24 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
       let todoError;
 
       if (existingTodos && existingTodos.length > 0) {
-        // Update existing todo with negotiated terms
+        // Update existing todo with ALL negotiated terms
         const { data: updatedTodo, error: updateError } = await supabase
           .from("todo_list")
           .update({
             details: {
-              category: task.category,
-              estimated_time: task.estimated_time,
-              payment_terms: task.payment_terms,
-              budget_original: task.budget,        // Original task budget (for reference)
-              budget: keyTerms.price,              // AGREED PRICE ✅
-              timeline: keyTerms.timeline,         // AGREED TIMELINE ✅
-              negotiation_notes: keyTerms.notes,   // AGREED NOTES ✅
+              // Original task fields (for audit trail)
+              category_original: task.category,
+              estimated_time_original: task.estimated_time,
+              payment_terms_original: task.payment_terms,
+              budget_original: task.budget,
+
+              // FINAL AGREED TERMS ✅
+              category: keyTerms.category || task.category,              // Negotiated or original
+              estimated_time: keyTerms.estimatedTime || task.estimated_time,  // Negotiated or original
+              payment_terms: keyTerms.paymentTerms || task.payment_terms,     // Negotiated or original
+              budget: keyTerms.price,                                    // AGREED PRICE ✅
+              timeline: keyTerms.timeline,                               // AGREED TIMELINE ✅
+              negotiation_notes: keyTerms.notes,                         // AGREED NOTES ✅
             },
           })
           .eq("id", existingTodos[0].id)
@@ -297,7 +315,7 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
         todoData = updatedTodo;
         todoError = updateError;
       } else {
-        // Create new todo with agreed terms
+        // Create new todo with ALL agreed terms
         // CRITICAL: provider_id MUST be from user_profiles.id, NOT auth.users.id
         const { data: newTodo, error: createError } = await supabase
           .from("todo_list")
@@ -310,17 +328,23 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
               description: task.description,
               priority: task.priority || "medium",
               due_date: task.due_date,
-              estimated_hours: task.estimated_time
-                ? parseInt(task.estimated_time)
+              estimated_hours: keyTerms.estimatedTime
+                ? parseInt(keyTerms.estimatedTime)
                 : null,
               details: {
-                category: task.category,
-                estimated_time: task.estimated_time,
-                payment_terms: task.payment_terms,
-                budget_original: task.budget,        // Original task budget (for reference)
-                budget: keyTerms.price,              // AGREED PRICE ✅
-                timeline: keyTerms.timeline,         // AGREED TIMELINE ✅
-                negotiation_notes: keyTerms.notes,   // AGREED NOTES ✅
+                // Original task fields (for audit trail)
+                category_original: task.category,
+                estimated_time_original: task.estimated_time,
+                payment_terms_original: task.payment_terms,
+                budget_original: task.budget,
+
+                // FINAL AGREED TERMS ✅
+                category: keyTerms.category || task.category,              // Negotiated or original
+                estimated_time: keyTerms.estimatedTime || task.estimated_time,  // Negotiated or original
+                payment_terms: keyTerms.paymentTerms || task.payment_terms,     // Negotiated or original
+                budget: keyTerms.price,                                    // AGREED PRICE ✅
+                timeline: keyTerms.timeline,                               // AGREED TIMELINE ✅
+                negotiation_notes: keyTerms.notes,                         // AGREED NOTES ✅
               },
               attachments: attachments.length > 0 ? attachments.map((a) => ({
                 id: a.attachmentId,
@@ -394,17 +418,71 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
         <CardContent>
           {isEditingTerms ? (
             <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-semibold">Price ($)</Label>
+                  <Input
+                    type="number"
+                    placeholder="0.00"
+                    step="0.01"
+                    value={editingTerms.price || ""}
+                    onChange={(e) =>
+                      setEditingTerms((prev) => ({
+                        ...prev,
+                        price: e.target.value ? parseFloat(e.target.value) : undefined,
+                      }))
+                    }
+                    className="mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs font-semibold">Timeline</Label>
+                  <Input
+                    type="text"
+                    placeholder="e.g., 5 days, 2 weeks"
+                    value={editingTerms.timeline || ""}
+                    onChange={(e) =>
+                      setEditingTerms((prev) => ({
+                        ...prev,
+                        timeline: e.target.value || undefined,
+                      }))
+                    }
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
               <div>
-                <Label className="text-xs font-semibold">Price ($)</Label>
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  step="0.01"
-                  value={editingTerms.price || ""}
+                <Label className="text-xs font-semibold">Category</Label>
+                <select
+                  value={editingTerms.category || ""}
                   onChange={(e) =>
                     setEditingTerms((prev) => ({
                       ...prev,
-                      price: e.target.value ? parseFloat(e.target.value) : undefined,
+                      category: e.target.value || undefined,
+                    }))
+                  }
+                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                >
+                  <option value="">Select a category</option>
+                  <option value="operations">Operations</option>
+                  <option value="service">Service</option>
+                  <option value="training">Training</option>
+                  <option value="maintenance">Maintenance</option>
+                </select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold">Estimated Time</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g., 8 hours, 2 days"
+                  value={editingTerms.estimatedTime || ""}
+                  onChange={(e) =>
+                    setEditingTerms((prev) => ({
+                      ...prev,
+                      estimatedTime: e.target.value || undefined,
                     }))
                   }
                   className="mt-1"
@@ -412,18 +490,18 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
               </div>
 
               <div>
-                <Label className="text-xs font-semibold">Timeline</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g., 5 days, 2 weeks"
-                  value={editingTerms.timeline || ""}
+                <Label className="text-xs font-semibold">Payment Terms</Label>
+                <Textarea
+                  placeholder="e.g., 50% upfront, 50% on completion"
+                  value={editingTerms.paymentTerms || ""}
                   onChange={(e) =>
                     setEditingTerms((prev) => ({
                       ...prev,
-                      timeline: e.target.value || undefined,
+                      paymentTerms: e.target.value || undefined,
                     }))
                   }
-                  className="mt-1"
+                  rows={2}
+                  className="mt-1 resize-none"
                 />
               </div>
 
@@ -461,7 +539,7 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {keyTerms.price !== undefined && (
                 <div className="p-3 bg-white rounded-lg border border-sheraton-gold/20">
                   <div className="flex items-center gap-2 mb-1">
@@ -470,7 +548,7 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
                       Agreed Price
                     </p>
                   </div>
-                  <p className="text-xl font-bold text-green-700">
+                  <p className="text-lg font-bold text-green-700">
                     ${keyTerms.price.toFixed(2)}
                   </p>
                 </div>
@@ -484,23 +562,45 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
                       Timeline
                     </p>
                   </div>
-                  <p className="text-lg font-semibold text-sheraton-navy">
+                  <p className="text-sm font-semibold text-sheraton-navy">
                     {keyTerms.timeline}
                   </p>
                 </div>
               )}
 
-              <div className="p-3 bg-white rounded-lg border border-sheraton-gold/20">
-                <p className="text-xs font-semibold text-gray-500 uppercase mb-1">
-                  Status
-                </p>
-                <p className="text-lg font-semibold text-sheraton-navy capitalize">
-                  Negotiating
-                </p>
-              </div>
+              {keyTerms.category && (
+                <div className="p-3 bg-white rounded-lg border border-sheraton-gold/20">
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-1">
+                    Category
+                  </p>
+                  <p className="text-sm font-semibold text-sheraton-navy capitalize">
+                    {keyTerms.category}
+                  </p>
+                </div>
+              )}
+
+              {keyTerms.estimatedTime && (
+                <div className="p-3 bg-white rounded-lg border border-sheraton-gold/20">
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-1">
+                    Est. Time
+                  </p>
+                  <p className="text-sm font-semibold text-sheraton-navy">
+                    {keyTerms.estimatedTime}
+                  </p>
+                </div>
+              )}
+
+              {keyTerms.paymentTerms && (
+                <div className="p-3 bg-white rounded-lg border border-sheraton-gold/20 md:col-span-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                    Payment Terms
+                  </p>
+                  <p className="text-sm text-gray-700">{keyTerms.paymentTerms}</p>
+                </div>
+              )}
 
               {keyTerms.notes && (
-                <div className="p-3 bg-white rounded-lg border border-sheraton-gold/20 md:col-span-3">
+                <div className="p-3 bg-white rounded-lg border border-sheraton-gold/20 md:col-span-2">
                   <p className="text-xs font-semibold text-gray-500 uppercase mb-2">
                     Notes
                   </p>
@@ -752,6 +852,24 @@ const NegotiationChat: React.FC<NegotiationChatProps> = ({
                   <div className="flex justify-between text-sm">
                     <span className="font-semibold text-gray-600">Timeline:</span>
                     <span className="text-gray-900">{keyTerms.timeline}</span>
+                  </div>
+                )}
+                {keyTerms.category && (
+                  <div className="flex justify-between text-sm">
+                    <span className="font-semibold text-gray-600">Category:</span>
+                    <span className="text-gray-900 capitalize">{keyTerms.category}</span>
+                  </div>
+                )}
+                {keyTerms.estimatedTime && (
+                  <div className="flex justify-between text-sm">
+                    <span className="font-semibold text-gray-600">Est. Time:</span>
+                    <span className="text-gray-900">{keyTerms.estimatedTime}</span>
+                  </div>
+                )}
+                {keyTerms.paymentTerms && (
+                  <div className="text-sm">
+                    <span className="font-semibold text-gray-600">Payment Terms:</span>
+                    <p className="text-gray-700 mt-1">{keyTerms.paymentTerms}</p>
                   </div>
                 )}
                 {keyTerms.notes && (

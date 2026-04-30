@@ -49,6 +49,10 @@ export const ServiceProviderProposalReview: React.FC<ServiceProviderProposalRevi
   const [showNegotiationChat, setShowNegotiationChat] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
   const [counterPrice, setCounterPrice] = useState("");
+  const [counterTimeline, setCounterTimeline] = useState("");
+  const [counterCategory, setCounterCategory] = useState("");
+  const [counterEstimatedTime, setCounterEstimatedTime] = useState("");
+  const [counterPaymentTerms, setCounterPaymentTerms] = useState("");
   const [counterNotes, setCounterNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -95,7 +99,10 @@ export const ServiceProviderProposalReview: React.FC<ServiceProviderProposalRevi
           .update({
             status: "counter_proposed",
             quoted_price: counterPrice ? parseFloat(counterPrice) : proposal.quoted_price,
-            proposed_timeline: counterNotes ? `Counter: ${counterNotes}` : proposal.proposed_timeline,
+            proposed_timeline: counterTimeline || proposal.proposed_timeline,
+            proposed_category: counterCategory || proposal.proposed_category,
+            proposed_estimated_time: counterEstimatedTime || proposal.proposed_estimated_time,
+            proposed_payment_terms: counterPaymentTerms || proposal.proposed_payment_terms,
             proposal_notes: counterNotes || proposal.proposal_notes,
           })
           .eq("id", proposal.id);
@@ -111,6 +118,10 @@ export const ServiceProviderProposalReview: React.FC<ServiceProviderProposalRevi
       setSelectedAction(null);
       setDeclineReason("");
       setCounterPrice("");
+      setCounterTimeline("");
+      setCounterCategory("");
+      setCounterEstimatedTime("");
+      setCounterPaymentTerms("");
       setCounterNotes("");
       setIsDialogOpen(false);
       onProposalUpdated?.();
@@ -361,13 +372,73 @@ export const ServiceProviderProposalReview: React.FC<ServiceProviderProposalRevi
                 </div>
 
                 <div>
+                  <Label htmlFor="counter-timeline" className="font-semibold">
+                    Your Counter Timeline (optional)
+                  </Label>
+                  <Input
+                    id="counter-timeline"
+                    type="text"
+                    placeholder="e.g., 5 days, 1 week"
+                    value={counterTimeline}
+                    onChange={(e) => setCounterTimeline(e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="counter-category" className="font-semibold">
+                    Category (optional)
+                  </Label>
+                  <select
+                    id="counter-category"
+                    value={counterCategory}
+                    onChange={(e) => setCounterCategory(e.target.value)}
+                    className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  >
+                    <option value="">Select a category</option>
+                    <option value="operations">Operations</option>
+                    <option value="service">Service</option>
+                    <option value="training">Training</option>
+                    <option value="maintenance">Maintenance</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="counter-estimated-time" className="font-semibold">
+                    Estimated Time (optional)
+                  </Label>
+                  <Input
+                    id="counter-estimated-time"
+                    type="text"
+                    placeholder="e.g., 8 hours, 2 days"
+                    value={counterEstimatedTime}
+                    onChange={(e) => setCounterEstimatedTime(e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="counter-payment-terms" className="font-semibold">
+                    Payment Terms (optional)
+                  </Label>
+                  <Textarea
+                    id="counter-payment-terms"
+                    placeholder="e.g., 50% upfront, 50% on completion"
+                    rows={2}
+                    value={counterPaymentTerms}
+                    onChange={(e) => setCounterPaymentTerms(e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+
+                <div>
                   <Label htmlFor="counter-notes" className="font-semibold">
-                    Your Counter-Terms
+                    Additional Notes (optional)
                   </Label>
                   <Textarea
                     id="counter-notes"
-                    placeholder="Explain your counter-proposal and any changes you're suggesting..."
-                    rows={4}
+                    placeholder="Explain your counter-proposal and any other conditions..."
+                    rows={3}
                     value={counterNotes}
                     onChange={(e) => setCounterNotes(e.target.value)}
                     className="mt-2"
